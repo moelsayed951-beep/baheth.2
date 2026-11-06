@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body { @apply min-h-screen flex flex-col font-plex; }
+  h1, h2, h3, h4, h5, h6 { @apply font-tajawal; }
+  :focus-visible { @apply outline-none ring-2 ring-academic-green dark:ring-academic-gold ring-offset-2 ring-offset-transparent; }
+}
+
+/* مكونات موحدة لضمان اتساق الوضعين الفاتح والليلي */
+@layer components {
+  .field {
+    @apply w-full px-4 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900
+      text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 text-sm;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-academic-green text-white text-sm font-bold
+      hover:bg-academic-green-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700
+      text-stone-700 dark:text-stone-200 text-xs hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors;
+  }
+  .chip {
+    @apply px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300
+      hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors;
+  }
+  .chip-active { @apply bg-academic-green text-white hover:bg-academic-green-hover dark:hover:bg-academic-green-light; }
+  .card { @apply rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm; }
+}

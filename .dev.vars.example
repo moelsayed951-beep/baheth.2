@@ -1,0 +1,51 @@
+# انسخ هذا الملف إلى .dev.vars (غير مرفوع إلى Git) لتجربة الدوال محلياً بـ: npm run pages:dev
+# على Cloudflare نفسه تُضاف نفس الأسماء من: Settings ← Variables and Secrets (نوع Secret)
+
+# ---- بحث الويب: يكفي مزوّد واحد ----
+# SEARCH_PROVIDER=tavily        # اختياري: google | tavily | serpapi | serper | brave (وإلا يُختار أول مزوّد مفاتيحه موجودة)
+GOOGLE_API_KEY=
+GOOGLE_CSE_ID=
+TAVILY_API_KEY=
+SERPAPI_API_KEY=
+SERPER_API_KEY=
+BRAVE_API_KEY=
+
+# ---- الذكاء الاصطناعي ----
+# ⚠️ الموصى به للمنصة العالمية: اترك مفاتيح الذكاء الاصطناعي هنا فارغة.
+#    كل مستخدم يضع مفتاحه الخاص من صفحة «مفاتيحي» فتكون التكلفة عليه. هذه المفاتيح اختيارية لمن يريد دعم المستخدمين على حسابه.
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+XAI_API_KEY=            # Grok من xAI (console.x.ai)
+DEEPSEEK_API_KEY=
+
+# ---- اختياري: تغيير النموذج دون تعديل الكود (أسماء النماذج تتغير وتُسحب أحياناً) ----
+# GEMINI_MODEL=gemini-flash-latest
+# OPENAI_MODEL=gpt-4o-mini
+# DEEPSEEK_MODEL=deepseek-chat
+# GROK_MODEL=grok-4.5
+# AI_HOURLY_LIMIT=30     # حد طلبات المساعد لكل زائر في الساعة (يتطلب KV باسم CACHE)
+
+# ---- اختياري: نطاقات إضافية مسموح لها باستدعاء الوسيط (مثل نطاق معاينة)، مفصولة بفواصل ----
+# ALLOWED_ORIGINS=
+
+# ---- مصادر أكاديمية عالمية جديدة (PubMed / BASE / DOAJ / arXiv) — كلها مجانية ----
+# NCBI_API_KEY=            # اختياري: يرفع حد PubMed من 3 إلى 10 طلبات/ثانية (مجاني من ncbi.nlm.nih.gov/account)
+# BASE_USER_AGENT=         # اختياري. ملاحظة: BASE يشترط تسجيل IP الخادم لديهم مجاناً (انظر README)
+# التخزين المؤقت 30 دقيقة: اربط KV باسم CACHE (راجع wrangler.toml). بدونه يُستخدم كاش الحافة تلقائياً.
+# MYMEMORY_EMAIL=         # اختياري: بريدك لرفع حصة الترجمة المجانية اليومية
+
+# ---- حسابات المستخدمين (تسجيل الدخول بـ Google + مفضلة + حصة يومية) — اختيارية ----
+# تُفعَّل فقط إذا وُجدت الثلاثة معاً: GOOGLE_CLIENT_ID و SESSION_SECRET (32+ حرفاً) وربط D1 باسم DB
+# GOOGLE_CLIENT_ID=        # معرّف عميل OAuth (من Google Cloud Console) — ليس سراً
+# SESSION_SECRET=          # 🔑 نص عشوائي طويل، ولّده بالأمر: openssl rand -base64 48
+# WEB_DAILY_LIMIT=40       # طلبات المكتبات العربية/بحث الويب لكل حساب يومياً
+# AI_DAILY_LIMIT=20        # طلبات المساعد الذكي بمفاتيح المنصة لكل حساب يومياً (غير مطلوبة لو لم تضف مفاتيح ذكاء)
+
+# ---- CORE (سرّ على الخادم فقط — لا تستخدم VITE_CORE_API_KEY أبداً) ----
+# CORE_API_KEY=            # مفتاح مجاني من core.ac.uk/services/api
+
+# ---- حدود الحماية من استنزاف الحصة (كلها اختيارية؛ القيم الافتراضية بين قوسين) ----
+# WEB_GLOBAL_DAILY_CAP=100        # سقف يومي لكل المستخدمين لبحث الويب. اضبطه = حصة Tavily الشهرية ÷ 30
+# TRANSLATE_GLOBAL_DAILY_CAP=150
+# AI_GLOBAL_DAILY_CAP=300         # لمفاتيح الذكاء الخاصة بالمنصة فقط
+# WEB_IP_HOURLY=30   SOURCE_IP_HOURLY=600   TRANSLATE_IP_HOURLY=40   AI_IP_HOURLY=60   AUTH_IP_HOURLY=30   LIBRARY_IP_HOURLY=600

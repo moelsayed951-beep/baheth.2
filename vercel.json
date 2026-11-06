@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/eric/:path*", "destination": "https://api.ies.ed.gov/eric/:path*" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

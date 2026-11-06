@@ -1,0 +1,17 @@
+# إعداد Cloudflare Pages (للتجربة المحلية بـ wrangler pages dev، وعلى لوحة Cloudflare يُضاف الربط يدوياً)
+name = "baheth"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-01-01"
+
+# تخزين مؤقت 30 دقيقة للمصادر الجديدة. أنشئه بالأمر:  npx wrangler kv namespace create CACHE
+# ثم ضع المعرّف الناتج هنا (أو من لوحة Cloudflare: Settings ← Bindings ← KV namespace باسم CACHE)
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "ضع_المعرّف_هنا"
+
+# قاعدة بيانات الحسابات والمفضلة والحصة اليومية (D1). أنشئها بالأمر:  npx wrangler d1 create baheth-db
+# ثم ضع المعرّف الناتج هنا، ونفّذ:  npx wrangler d1 execute baheth-db --remote --file=migrations/0001_init.sql
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "baheth-db"
+# database_id = "ضع_المعرّف_هنا"
