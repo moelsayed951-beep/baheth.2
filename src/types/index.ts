@@ -1,6 +1,6 @@
 // الأنواع الأساسية للمنصة
 export type AcademicDomain = 'all' | 'education' | 'sharia';
-export type ProxySourceId = 'pubmed' | 'base' | 'doaj' | 'arxiv' | 'europepmc' | 'zenodo' | 'hal' | 'core';
+export type ProxySourceId = 'pubmed' | 'base' | 'doaj' | 'arxiv' | 'europepmc' | 'zenodo' | 'hal' | 'core' | 'semanticscholar';
 export type WebLibraryGroupId = 'web_arabic_db' | 'web_arabic_books' | 'web_egypt_repos' | 'web_global_pubs';
 export type AcademicSourceId = 'openalex' | 'crossref' | 'eric' | 'semanticscholar' | 'core' | 'openaire' | ProxySourceId | WebLibraryGroupId;
 
@@ -18,6 +18,7 @@ export interface UnifiedResearchResult {
   provider: 'api' | 'web-search';
   pdfUrl?: string;
   openAccess?: boolean;
+  citationCount?: number;
   institution?: string; // الجهة/المستودع الحاضن (جامعة أو مستودع)
   venue?: string; // المجلة أو الدورية
   publisher?: string;
@@ -79,8 +80,14 @@ export interface FilterOptions {
 
 export type SourceStatus = 'ok' | 'error' | 'skipped';
 
+export interface SourceIssue {
+  kind: 'needs_key' | 'needs_login' | 'needs_ip' | 'quota' | 'no_translation' | 'network' | 'other';
+  action?: { label: string; to: string }; // رابط إصلاح داخل المنصة (مثل صفحة مفاتيحي)
+}
+
 export interface SourceReport {
   id: AcademicSourceId;
+  issue?: SourceIssue; // يوجد عند عدم توفر المصدر؛ يحدد طريقة عرضه (هادئ أو خطأ)
   kind?: 'api' | 'web-search';
   label: string;
   status: SourceStatus;

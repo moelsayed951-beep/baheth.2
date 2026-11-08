@@ -5,23 +5,55 @@ import { englishOf } from '@/utils/queryExpander';
 import { normalizeData } from '../normalize';
 import { searchWeb } from '../googleSearchService';
 import { SourceSkipped } from '../errors';
+import { classifyFailure } from '../sourceIssues';
+import { getKey, type KeyId } from '@/utils/userKeys';
 
-// PubMed و arXiv و DOAJ إنجليزية في الغالب → نستخدم الترجمة المعروفة؛ BASE يدعم العربية مباشرة
-const NEEDS_ENGLISH: Record<ProxySourceId, boolean> = { pubmed: true, arxiv: true, europepmc: true, doaj: false, base: false, zenodo: false, hal: false, core: false };
+// مصادر تفهم الإنجليزية أفضل → نستخدم ترجمة الاستعلام؛ وBASE وCORE وDOAJ وZenodo وHAL تدعم العربية مباشرة
+const NEEDS_ENGLISH: Record<ProxySourceId, boolean> = { pubmed: true, arxiv: true, europepmc: true, semanticscholar: true, doaj: false, base: false, zenodo: false, hal: false, core: false };
+
+// مفاتيح المستخدم الخاصة لهذه المصادر تُرسل في ترويسة طلب واحد إلى وسيط Cloudflare (لا تُرسل لأي جهة أخرى)
+const KEY_OF: Partial<Record<ProxySourceId, { header: string; id: KeyId; label: string }>> = {
+  core: { header: 'X-User-Core-Key', id: 'core', label: 'CORE' },
+  semanticscholar: { header: 'X-User-S2-Key', id: 's2', label: 'Semantic Scholar' }
+};
+
+// مصادر تعذّرت لسبب لا يتغير خلال الجلسة (تسجيل IP لدى BASE، رفض Zenodo، غياب مفتاح CORE): لا نكرر الطلب مع كل صفحة بل نتخطاها بهدوء
+const parked = new Map<string, SourceSkipped>();
+const PARKABLE: ProxySourceId[] = ['base', 'zenodo', 'core'];
+export const _resetParkedForTests = (): void => parked.clear();
 
 export async function searchProxied(src: ProxySourceId, filters: FilterOptions, signal?: AbortSignal): Promise<Paper[]> {
+  const keyInfo = KEY_OF[src];
+  const userKey = keyInfo ? getKey(keyInfo.id) : undefined;
+  const held = parked.get(src);
+  if (held && !userKey) throw held; // إن أضاف المستخدم مفتاحه نعيد المحاولة
+
   let q = filters.query.trim();
   if (NEEDS_ENGLISH[src]) {
     const english = englishOf(filters.query, filters.englishQuery);
-    if (!english) throw new SourceSkipped('لا توجد ترجمة إنجليزية معروفة للاستعلام');
+    if (!english) throw new SourceSkipped('تعذّرت ترجمة الاستعلام للإنجليزية فتُخطّي هذا المصدر', 'no_translation');
     q = english;
   }
+  let path = `/api/proxy/source?src=${src}&q=${encodeURIComponent(q)}&page=${filters.page ?? 0}`;
+  if (src === 'semanticscholar') path += `&ys=${filters.yearStart ?? ''}&ye=${filters.yearEnd ?? ''}`;
+
   try {
-    const data = await callProxy<{ results: UnifiedResearchResult[] }>(`/api/proxy/source?src=${src}&q=${encodeURIComponent(q)}&page=${filters.page ?? 0}`, { signal, timeoutMs: 18000 });
+    const data = await callProxy<{ results: UnifiedResearchResult[] }>(path, { signal, timeoutMs: 18000, headers: keyInfo && userKey ? { [keyInfo.header]: userKey } : undefined });
+    parked.delete(src);
     return normalizeData(data.results, src, filters.domain);
   } catch (e) {
-    // بيئة التطوير بدون دوال Cloudflare: نتخطى بدل إظهار خطأ
-    if (e instanceof ProxyError && (e.status === 404 || e.code === 'not_configured')) throw new SourceSkipped(e.message);
+    if (e instanceof ProxyError) {
+      // بيئة التطوير بدون دوال Cloudflare: نتخطى بدل إظهار خطأ
+      if (e.status === 404) throw new SourceSkipped(e.message);
+      const c = classifyFailure(src, e);
+      if (c.status === 'skipped' && ['needs_key', 'needs_ip', 'needs_login'].includes(c.issue.kind)) {
+        // لدى المستخدم مفتاح لكن المصدر رفضه/بلغ حدّه: رسالة مختلفة ولا نوقف المصدر
+        if (userKey && keyInfo) throw new SourceSkipped(`${keyInfo.label} رفض مفتاحك أو بلغ حدّه: تحقق منه في «مفاتيحي» أو جرّب لاحقاً`, 'quota');
+        const skip = new SourceSkipped(c.message, c.issue.kind);
+        if (PARKABLE.includes(src)) parked.set(src, skip);
+        throw skip;
+      }
+    }
     throw e;
   }
 }

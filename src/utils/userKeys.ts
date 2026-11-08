@@ -3,7 +3,7 @@
 // فتُحفظ في localStorage. لا تُرفع لأي قاعدة بيانات؛ تُرسل مع كل طلب عبر HTTPS لوسيط المنصة الذي لا يخزنها ولا يسجلها.
 import { useSyncExternalStore } from 'react';
 
-export type KeyId = 'gemini' | 'grok' | 'openai' | 'deepseek' | 'tavily';
+export type KeyId = 'gemini' | 'grok' | 'openai' | 'deepseek' | 'tavily' | 's2' | 'core';
 export type UserKeys = Partial<Record<KeyId, string>>;
 
 const STORE = 'baheth-user-keys';

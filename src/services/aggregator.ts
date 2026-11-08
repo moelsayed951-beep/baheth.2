@@ -2,12 +2,13 @@ import type { AcademicSourceId, AggregateResult, FilterOptions, Paper, SortKey, 
 import { normalizeText } from '@/utils/text';
 import { applyFilters, type FilterStats } from './filters';
 import { rankPapers } from './ranking';
-import { SourceSkipped } from './errors';
 import { searchCrossref } from './sources/crossref';
 import { searchEric } from './sources/eric';
 import { searchOpenAire } from './sources/openaire';
 import { searchOpenAlex } from './sources/openalex';
 import { searchSemanticScholar } from './sources/semanticscholar';
+import { searchCore } from './sources/core';
+import { classifyFailure } from './sourceIssues';
 import { resolveEnglishQuery } from './translate';
 import { WEB_LIBRARY_GROUPS, searchProxied, searchWebLibraries } from './sources/proxied';
 
@@ -146,7 +147,8 @@ export async function aggregateAllSources(filters: FilterOptions, signal?: Abort
     { id: 'openaire', run: () => wrap(searchOpenAire(filters, signal)) },
     { id: 'crossref', run: () => wrap(searchCrossref(filters, signal)) },
     // مصادر عالمية جديدة عبر وسيط Cloudflare (مع كاش 30 دقيقة)
-    ...(['pubmed', 'base', 'doaj', 'arxiv', 'europepmc', 'zenodo', 'hal', 'core'] as const).map((id) => ({ id: id as AcademicSourceId, run: () => wrap(searchProxied(id, filters, signal)) })),
+    { id: 'core', run: () => wrap(searchCore(filters, signal)) },
+    ...(['pubmed', 'base', 'doaj', 'arxiv', 'europepmc', 'zenodo', 'hal'] as const).map((id) => ({ id: id as AcademicSourceId, run: () => wrap(searchProxied(id, filters, signal)) })),
     // مكتبات عربية/محلية/ناشرون عبر بحث الويب (site:)
     ...(options.includeWeb === false ? [] : WEB_LIBRARY_GROUPS).map((g) => ({ id: g.id as AcademicSourceId, run: () => wrap(searchWebLibraries(g, filters, signal)) }))
   ];
@@ -162,11 +164,10 @@ export async function aggregateAllSources(filters: FilterOptions, signal?: Abort
     if (res.status === 'fulfilled') {
       lists.push(res.value.papers);
       reports.push({ id, label, kind: WEB_LIBRARY_GROUPS.some((g) => g.id === id) ? 'web-search' : 'api', status: 'ok', count: res.value.papers.length, message: res.value.note });
-    } else if (res.reason instanceof SourceSkipped) {
-      reports.push({ id, label, status: 'skipped', count: 0, message: res.reason.message });
     } else {
-      const message = res.reason instanceof Error ? res.reason.message : 'تعذر الاتصال بالمصدر';
-      reports.push({ id, label, status: 'error', count: 0, message });
+      // تصنيف السبب: «يحتاج إعداداً» (مفتاح/تسجيل/IP) يُعرض بهدوء، والفشل الحقيقي يُعرض كخطأ صغير
+      const c = classifyFailure(id, res.reason);
+      reports.push({ id, label, status: c.status, count: 0, message: c.message, issue: c.issue });
     }
   });
 
@@ -194,7 +195,7 @@ export function mergeReports(pages: AggregateResult[]): SourceReport[] {
       const prev = out.get(r.id);
       if (!prev) { out.set(r.id, { ...r }); continue; }
       const ok = prev.status === 'ok' || r.status === 'ok';
-      out.set(r.id, { ...prev, status: ok ? 'ok' : r.status, count: prev.count + r.count, message: ok ? prev.message : r.message });
+      out.set(r.id, { ...prev, status: ok ? 'ok' : r.status, count: prev.count + r.count, message: ok ? prev.message : r.message, issue: ok ? undefined : r.issue ?? prev.issue });
     }
   }
   return [...out.values()];

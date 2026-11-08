@@ -11,6 +11,8 @@ const KEYS: KeyInfo[] = [
   { id: 'grok', label: 'Grok (xAI)', purpose: 'المساعد الذكي', url: 'https://console.x.ai', note: 'يحتاج رصيداً في حسابك لدى xAI.' },
   { id: 'openai', label: 'OpenAI', purpose: 'المساعد الذكي', url: 'https://platform.openai.com/api-keys', note: 'يحتاج رصيداً في حسابك لدى OpenAI.' },
   { id: 'deepseek', label: 'DeepSeek', purpose: 'المساعد الذكي', url: 'https://platform.deepseek.com/api_keys', note: 'تكلفته منخفضة عادةً؛ يحتاج رصيداً.' },
+  { id: 's2', label: 'Semantic Scholar', purpose: 'البحث العلمي (حدّ طلبات أعلى)', url: 'https://www.semanticscholar.org/product/api#api-key-form', note: 'مفتاح مجاني يُطلب بنموذج؛ بدونه يزدحم حدّ الطلبات المشترك ويتعذر المصدر أحياناً.' },
+  { id: 'core', label: 'CORE', purpose: 'البحث العلمي (مستودعات مفتوحة)', url: 'https://core.ac.uk/services/api', note: 'مفتاح مجاني للباحثين؛ بدونه يتعذر البحث في CORE إن لم تضف المنصة مفتاحها.' },
   { id: 'tavily', label: 'Tavily', purpose: 'البحث في المكتبات العربية والناشرين', url: 'https://app.tavily.com', note: 'له حصة مجانية شهرية. بدونه قد تتوقف نتائج المكتبات العربية إذا نفدت حصة المنصة.' }
 ];
 
@@ -62,7 +64,7 @@ export const SettingsPage: React.FC = () => {
       <header>
         <h1 className="text-2xl font-extrabold font-tajawal text-stone-900 dark:text-stone-100 flex items-center gap-2"><KeyRound className="w-6 h-6 text-academic-gold" />مفاتيحي</h1>
         <p className="mt-2 text-sm leading-7 text-stone-600 dark:text-stone-300">
-          البحث الأكاديمي مجاني للجميع. أما المساعد الذكي فيعمل بمفتاحك أنت، فتكون تكلفته على حسابك وبحسب استخدامك أنت. أضف مفتاح مزوّد واحد على الأقل (يكفي Gemini للبداية).
+          البحث الأكاديمي مجاني للجميع. أما المساعد الذكي فيعمل بمفتاحك أنت، فتكون تكلفته على حسابك وبحسب استخدامك أنت (يكفي Gemini للبداية). ومفتاحا Semantic Scholar وCORE يرفعان حدود البحث ويفعّلان مصادر قد تتعذر بدونهما.
         </p>
       </header>
 

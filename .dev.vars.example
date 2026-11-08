@@ -49,3 +49,10 @@ DEEPSEEK_API_KEY=
 # TRANSLATE_GLOBAL_DAILY_CAP=150
 # AI_GLOBAL_DAILY_CAP=300         # لمفاتيح الذكاء الخاصة بالمنصة فقط
 # WEB_IP_HOURLY=30   SOURCE_IP_HOURLY=600   TRANSLATE_IP_HOURLY=40   AI_IP_HOURLY=60   AUTH_IP_HOURLY=30   LIBRARY_IP_HOURLY=600
+
+# ---- النسخة 4: نماذج Gemini الاحتياطية، ومفاتيح المنصة لـ Semantic Scholar وCORE، ورمز Zenodo ----
+# GEMINI_MODEL=gemini-2.5-flash                 # النموذج الأساسي (الافتراضي)
+# GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite  # احتياطي مفصول بفاصلة. ⚠️ gemini-1.5-flash أوقفته Google رسمياً (29/9/2025) فلا تضعه
+# S2_API_KEY=            # 🔑 مفتاح Semantic Scholar للمنصة (احتياطي إن لم يضف المستخدم مفتاحه). نموذج الطلب: semanticscholar.org/product/api
+# CORE_API_KEY=          # 🔑 مفتاح CORE للمنصة (احتياطي إن لم يضف المستخدم مفتاحه)
+# ZENODO_ACCESS_TOKEN=   # 🔑 اختياري: إن كان Zenodo يرفض طلبات الخادم المجهولة (403)

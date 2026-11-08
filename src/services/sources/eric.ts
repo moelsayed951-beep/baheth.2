@@ -32,7 +32,7 @@ export async function searchEric(filters: FilterOptions, signal?: AbortSignal, l
     .filter(Boolean)
     .join(' ');
   const text = [english, deptEnglish].filter(Boolean).join(' ').replace(/["]/g, ' ').trim();
-  if (!english) throw new SourceSkipped('لا توجد ترجمة إنجليزية معروفة للاستعلام');
+  if (!english) throw new SourceSkipped('تعذّرت ترجمة الاستعلام للإنجليزية فتُخطّي هذا المصدر', 'no_translation');
 
   const base = ERIC_API_BASE.replace(/\/$/, '');
   const params = new URLSearchParams({ search: text, format: 'json', rows: String(limit), start: String((filters.page ?? 0) * limit) });

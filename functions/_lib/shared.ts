@@ -23,6 +23,9 @@ export interface Env {
   OPENAI_MODEL?: string;
   DEEPSEEK_MODEL?: string;
   GROK_MODEL?: string;
+  GEMINI_FALLBACK_MODELS?: string; // قائمة نماذج احتياطية مفصولة بفاصلة (الافتراضي gemini-2.5-flash-lite). ملاحظة: gemini-1.5-flash متوقف رسمياً منذ 29/9/2025
+  S2_API_KEY?: string; // 🔑 مفتاح Semantic Scholar الخاص بالمنصة (احتياطي إن لم يضع المستخدم مفتاحه)
+  ZENODO_ACCESS_TOKEN?: string; // 🔑 اختياري: رمز وصول Zenodo إن رفض الخادم الطلبات المجهولة (403)
   AI_HOURLY_LIMIT?: string; // اختياري: الحد الأقصى لطلبات المساعد الذكي لكل زائر في الساعة (الافتراضي 30)
   // --- مصادر أكاديمية جديدة (كلها مجانية) ---
   NCBI_API_KEY?: string; // اختياري: يرفع حد PubMed من 3 إلى 10 طلبات/ثانية (مجاني من NCBI)

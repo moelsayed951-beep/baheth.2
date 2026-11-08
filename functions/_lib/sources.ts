@@ -4,8 +4,11 @@
 // ============================================================
 import { HttpFail, fetchWithTimeout, plainText, safeHttpUrl, upstreamFailure, type Env } from './shared';
 
-export type ProxySourceId = 'pubmed' | 'base' | 'doaj' | 'arxiv' | 'europepmc' | 'zenodo' | 'hal' | 'core';
-export const PROXY_SOURCES: ProxySourceId[] = ['pubmed', 'base', 'doaj', 'arxiv', 'europepmc', 'zenodo', 'hal', 'core'];
+export type ProxySourceId = 'pubmed' | 'base' | 'doaj' | 'arxiv' | 'europepmc' | 'zenodo' | 'hal' | 'core' | 'semanticscholar';
+export const PROXY_SOURCES: ProxySourceId[] = ['pubmed', 'base', 'doaj', 'arxiv', 'europepmc', 'zenodo', 'hal', 'core', 'semanticscholar'];
+
+// خيارات إضافية لكل طلب: مفتاح المستخدم الخاص (BYOK، له الأولوية على مفتاح المنصة) وسنوات للتصفية المبكرة
+export interface SourceOpts { userKey?: string; yearStart?: number; yearEnd?: number }
 export const MAX_PAGE = 49; // حد أقصى معقول للتعمّق (≈1000 نتيجة لكل مصدر)
 
 export interface UnifiedResearchResult {
@@ -21,6 +24,7 @@ export interface UnifiedResearchResult {
   provider: 'api' | 'web-search';
   pdfUrl?: string;
   openAccess?: boolean;
+  citationCount?: number;
   institution?: string;
   venue?: string;
   publisher?: string;
@@ -158,9 +162,12 @@ async function europepmc(_env: Env, q: string, page: number): Promise<UnifiedRes
 /* ---------------- Zenodo (أبحاث ورسائل وبيانات بحثية مفتوحة) ---------------- */
 interface ZenodoResp { hits?: { hits?: { id?: number; links?: { self_html?: string }; metadata?: { title?: string; creators?: { name?: string }[]; publication_date?: string; description?: string; doi?: string; resource_type?: { type?: string; subtype?: string }; journal?: { title?: string; volume?: string; issue?: string; pages?: string } } }[] } }
 
-async function zenodo(_env: Env, q: string, page: number): Promise<UnifiedResearchResult[]> {
+async function zenodo(env: Env, q: string, page: number): Promise<UnifiedResearchResult[]> {
   const params = new URLSearchParams({ q, size: String(SOURCE_LIMIT), page: String(page + 1), type: 'publication' });
-  const res = await fetchWithTimeout(`https://zenodo.org/api/records?${params.toString()}`, { headers: { Accept: 'application/json' } }, TIMEOUT);
+  // Zenodo قد يرفض الطلبات المجهولة من عناوين الخوادم (403): نعرّف التطبيق، ونستخدم رمز وصول اختياري إن أُضيف
+  const res = await fetchWithTimeout(`https://zenodo.org/api/records?${params.toString()}`, {
+    headers: { Accept: 'application/json', 'User-Agent': 'BahethResearchPortal/1.0 (open research search)', ...(env.ZENODO_ACCESS_TOKEN ? { Authorization: `Bearer ${env.ZENODO_ACCESS_TOKEN}` } : {}) }
+  }, TIMEOUT);
   if (!res.ok) throw upstreamFailure(res.status, 'Zenodo');
   const data = (await res.json()) as ZenodoResp;
   return (data.hits?.hits ?? []).flatMap((h): UnifiedResearchResult[] => {
@@ -201,10 +208,11 @@ async function hal(_env: Env, q: string, page: number): Promise<UnifiedResearchR
 /* ---------------- CORE (مفتاح على الخادم فقط) ---------------- */
 interface CoreResp { results?: { id?: number | string; title?: string; abstract?: string | null; authors?: { name?: string }[]; yearPublished?: number | null; doi?: string | null; downloadUrl?: string | null; publisher?: string | null; dataProviders?: { name?: string }[]; documentType?: string | null; journals?: { title?: string }[] }[] }
 
-async function core(env: Env, q: string, page: number): Promise<UnifiedResearchResult[]> {
-  if (!env.CORE_API_KEY) throw new HttpFail(503, 'not_configured', 'CORE غير مفعّل: أضف CORE_API_KEY كسرّ في إعدادات Cloudflare (مفتاح مجاني من core.ac.uk).');
+async function core(env: Env, q: string, page: number, opts: SourceOpts = {}): Promise<UnifiedResearchResult[]> {
+  const key = opts.userKey || env.CORE_API_KEY; // مفتاح المستخدم أولاً، ثم مفتاح المنصة
+  if (!key) throw new HttpFail(503, 'not_configured', 'CORE غير مفعّل: أضف مفتاحك من صفحة «مفاتيحي» أو CORE_API_KEY في إعدادات Cloudflare (مفتاح مجاني من core.ac.uk).');
   const params = new URLSearchParams({ q, limit: String(SOURCE_LIMIT), offset: String(page * SOURCE_LIMIT) });
-  const res = await fetchWithTimeout(`https://api.core.ac.uk/v3/search/works?${params.toString()}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${env.CORE_API_KEY}` } }, 15000);
+  const res = await fetchWithTimeout(`https://api.core.ac.uk/v3/search/works?${params.toString()}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${key}` } }, 15000);
   if (!res.ok) throw upstreamFailure(res.status, 'CORE');
   const data = (await res.json()) as CoreResp;
   return (data.results ?? []).flatMap((w): UnifiedResearchResult[] => {
@@ -220,6 +228,31 @@ async function core(env: Env, q: string, page: number): Promise<UnifiedResearchR
   });
 }
 
-const ADAPTERS: Record<ProxySourceId, (env: Env, q: string, page: number) => Promise<UnifiedResearchResult[]>> = { pubmed, base, doaj, arxiv, europepmc, zenodo, hal, core };
+/* ---------------- Semantic Scholar (مفتاح المستخدم ← مفتاح المنصة S2_API_KEY ← بلا مفتاح) ---------------- */
+interface S2Resp { data?: { paperId: string; title?: string; abstract?: string | null; year?: number | null; authors?: { name?: string }[]; citationCount?: number; isOpenAccess?: boolean; openAccessPdf?: { url?: string } | null; externalIds?: { DOI?: string } | null; url?: string; venue?: string; publicationTypes?: string[] | null }[] }
 
-export const runSource = (src: ProxySourceId, env: Env, q: string, page = 0): Promise<UnifiedResearchResult[]> => ADAPTERS[src](env, q, page);
+async function semanticscholar(env: Env, q: string, page: number, opts: SourceOpts = {}): Promise<UnifiedResearchResult[]> {
+  const params = new URLSearchParams({ query: q, limit: String(SOURCE_LIMIT), offset: String(page * SOURCE_LIMIT), fields: 'title,abstract,year,authors,citationCount,isOpenAccess,openAccessPdf,externalIds,url,venue,publicationTypes' });
+  if (opts.yearStart || opts.yearEnd) params.set('year', `${opts.yearStart ?? ''}-${opts.yearEnd ?? ''}`);
+  const key = opts.userKey || env.S2_API_KEY;
+  const res = await fetchWithTimeout(`https://api.semanticscholar.org/graph/v1/paper/search?${params.toString()}`, {
+    headers: { Accept: 'application/json', ...(key ? { 'x-api-key': key } : {}) } // 🔑 في الترويسة لا الرابط
+  }, 15000);
+  if (!res.ok) throw upstreamFailure(res.status, 'Semantic Scholar');
+  const data = (await res.json()) as S2Resp;
+  return (data.data ?? []).flatMap((p): UnifiedResearchResult[] => {
+    if (!p.title?.trim()) return [];
+    const doi = p.externalIds?.DOI ?? undefined;
+    const url = doi ? `https://doi.org/${doi}` : safeHttpUrl(p.url ?? '') ?? `https://www.semanticscholar.org/paper/${p.paperId}`;
+    return [{
+      id: `s2-${p.paperId}`, title: plainText(p.title), authors: (p.authors ?? []).map((a) => a.name ?? '').filter(Boolean), source: 'Semantic Scholar', year: yearOf(p.year),
+      type: (p.publicationTypes ?? []).includes('Book') ? 'book' : guessType(p.title), abstract: p.abstract ? plainText(p.abstract) : undefined, url, doi, provider: 'api',
+      openAccess: Boolean(p.isOpenAccess || p.openAccessPdf?.url), pdfUrl: p.openAccessPdf?.url ? safeHttpUrl(p.openAccessPdf.url) ?? undefined : undefined,
+      venue: p.venue || undefined, citationCount: p.citationCount ?? 0
+    }];
+  });
+}
+
+const ADAPTERS: Record<ProxySourceId, (env: Env, q: string, page: number, opts?: SourceOpts) => Promise<UnifiedResearchResult[]>> = { pubmed, base, doaj, arxiv, europepmc, zenodo, hal, core, semanticscholar };
+
+export const runSource = (src: ProxySourceId, env: Env, q: string, page = 0, opts: SourceOpts = {}): Promise<UnifiedResearchResult[]> => ADAPTERS[src](env, q, page, opts);

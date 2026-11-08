@@ -15,7 +15,7 @@ const MAX_RESEARCH_REFS = 12;
 const MAX_RESEARCH_CHARS = 24_000;
 const MAX_TURNS = 20;
 const MAX_TURN_CHARS = 4_000;
-const MAX_DOC_CHARS = 12_000;
+const MAX_DOC_CHARS = 6_000; // نص المرجع للتلخيص: يكفي لفكرة البحث ويُسرّع الاستجابة
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
@@ -33,11 +33,20 @@ function parseTurns(raw: unknown): ChatTurn[] {
   return turns;
 }
 
+// تقليم عند حدّ كلمة مع إشعار النموذج بالاقتطاع حتى لا يدّعي قراءة النص كاملاً
+export function trimAtWord(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${cut.slice(0, lastSpace > max * 0.8 ? lastSpace : max)}…\n[اقتُطع النص هنا لطوله]`;
+}
+
 function parseDoc(raw: unknown): DocContext | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (!isObj(raw) || typeof raw.title !== 'string' || typeof raw.text !== 'string') throw new HttpFail(400, 'bad_doc', 'المرجع المرفق غير صالح');
   const url = typeof raw.url === 'string' ? safeHttpUrl(raw.url) ?? undefined : undefined;
-  return { title: raw.title.slice(0, 500), text: raw.text.slice(0, MAX_DOC_CHARS), url };
+  return { title: raw.title.slice(0, 500), text: trimAtWord(raw.text, MAX_DOC_CHARS), url };
 }
 
 // مراجع مساعد البحث: أرقامها تُعيَّن هنا (1..n) فلا يستطيع العميل تزييفها

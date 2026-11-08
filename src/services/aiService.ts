@@ -20,7 +20,9 @@ function userKeyHeader(provider: AiProviderId): Record<string, string> | undefin
 interface AiReply { provider: AiProviderId; model: string; text: string }
 
 export async function askAi(provider: AiProviderId, messages: ChatTurn[], doc?: AiDoc, signal?: AbortSignal): Promise<string> {
-  const data = await callProxy<AiReply>('/api/proxy/ai', { method: 'POST', body: { provider, messages, doc }, signal, timeoutMs: 40000, headers: userKeyHeader(provider) });
+  // الخادم قد يجرّب أكثر من نموذج (حتى 55 ثانية)، فننتظر 70 ثانية. ونُقلّم نص المرجع من الجهة الأخرى لتسريع الرد
+  const lean = doc ? { ...doc, text: doc.text.length > 6000 ? `${doc.text.slice(0, 6000)}…` : doc.text } : doc;
+  const data = await callProxy<AiReply>('/api/proxy/ai', { method: 'POST', body: { provider, messages, doc: lean }, signal, timeoutMs: 70000, headers: userKeyHeader(provider) });
   return data.text;
 }
 
@@ -33,7 +35,7 @@ export async function askResearch(provider: AiProviderId, task: ResearchTask, pr
     method: 'POST',
     body: { provider, messages: [{ role: 'user', content: prompt }], research: { task, refs } },
     signal,
-    timeoutMs: 90000,
+    timeoutMs: 100000,
     headers: userKeyHeader(provider)
   });
   return data.text;

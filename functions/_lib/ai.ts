@@ -94,8 +94,25 @@ interface GeminiResp {
   promptFeedback?: { blockReason?: string };
 }
 
-async function viaGemini(env: Env, key: string, system: string, turns: ChatTurn[]): Promise<string> {
-  const model = modelFor('gemini', env);
+/* ---------------- Gemini: سلسلة نماذج احتياطية ومهل محسوبة ---------------- */
+// مهلة المحاولة الواحدة 30 ثانية، وإجمالي الطلب 55 ثانية (الواجهة تنتظر 70). لا حد زمنياً صارماً لـ Workers أثناء انتظار الشبكة،
+// فالمهلة هنا تحكّمنا نحن عبر AbortSignal.timeout.
+export const AI_ATTEMPT_MS = 30_000;
+export const AI_TOTAL_MS = 55_000;
+
+// ⚠️ gemini-1.5-flash أوقفته Google رسمياً (29/9/2025) فلا يصلح احتياطاً؛ الافتراضي: 2.5-flash ثم 2.5-flash-lite.
+export function geminiChain(env: Env): string[] {
+  const extra = (env.GEMINI_FALLBACK_MODELS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  return [...new Set([env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash', ...(extra.length ? extra : ['gemini-2.5-flash-lite'])])];
+}
+
+// أخطاء يُجدي معها تجربة النموذج التالي (انتهاء مهلة، ازدحام، نموذج غير موجود/متوقف، خطأ خادم). أما رفض المفتاح أو حجب المحتوى فيتوقف فوراً.
+const RETRYABLE = new Set(['timeout', 'network', 'upstream_error', 'quota', 'upstream_not_found', 'empty']);
+const WHY: Record<string, string> = { timeout: 'انتهت المهلة', network: 'تعذّر الاتصال', quota: 'تجاوز الحد', upstream_not_found: 'النموذج غير متاح', upstream_error: 'خطأ من الخدمة', empty: 'رد فارغ' };
+
+interface GeminiOpts { fast: boolean; maxTokens: number; attemptMs: number; totalMs: number }
+
+async function geminiOnce(key: string, model: string, system: string, turns: ChatTurn[], opts: GeminiOpts, ms: number): Promise<string> {
   const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -105,10 +122,15 @@ async function viaGemini(env: Env, key: string, system: string, turns: ChatTurn[
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: turns.map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.content }] })),
-        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: opts.maxTokens,
+          // التفكير الداخلي يبطّئ التلخيص كثيراً: نوقفه لعائلة 2.5 فقط (نماذج 3.x لها إعداد مختلف فلا نرسله لها)
+          ...(opts.fast && /^gemini-2\.5/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+        }
       })
     },
-    28000
+    ms
   );
   if (!res.ok) throw upstreamFailure(res.status, LABEL.gemini);
   const data = (await res.json()) as GeminiResp;
@@ -117,6 +139,25 @@ async function viaGemini(env: Env, key: string, system: string, turns: ChatTurn[
   const text = (cand?.content?.parts ?? []).filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
   if (!text) throw new HttpFail(502, 'empty', 'لم يُرجع Gemini إجابة (قد يكون المحتوى محجوباً أو النموذج غير متاح).');
   return text;
+}
+
+async function viaGemini(env: Env, key: string, system: string, turns: ChatTurn[], opts: GeminiOpts): Promise<{ text: string; model: string }> {
+  const chain = geminiChain(env);
+  const deadline = Date.now() + opts.totalMs;
+  const failures: string[] = [];
+  for (const model of chain) {
+    const left = deadline - Date.now();
+    if (left < 3000) break;
+    try {
+      return { text: await geminiOnce(key, model, system, turns, opts, Math.min(opts.attemptMs, left)), model };
+    } catch (e) {
+      if (!(e instanceof HttpFail) || !RETRYABLE.has(e.code)) throw e; // مفتاح مرفوض/محتوى محجوب: لا فائدة من نموذج آخر
+      failures.push(`${model}: ${WHY[e.code] ?? e.code}`);
+    }
+  }
+  const allTimeouts = failures.length > 0 && failures.every((f) => f.includes(WHY.timeout));
+  throw new HttpFail(allTimeouts ? 504 : 502, 'ai_unavailable',
+    `تعذّر الحصول على رد من Gemini بعد تجربة ${failures.length} نموذجاً (${failures.join(' · ') || 'نفدت المهلة'}). حاول بعد لحظات، أو اختر مزوّداً آخر من القائمة.`);
 }
 
 /* ---------------- OpenAI و DeepSeek (واجهة متوافقة) ---------------- */
@@ -131,7 +172,7 @@ async function viaChatCompletions(provider: Exclude<AiProviderId, 'gemini'>, url
       // لا نرسل temperature/max_tokens عمداً: بعض النماذج الحديثة ترفضها أو تستخدم أسماء مختلفة
       body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, ...turns] })
     },
-    28000
+    AI_ATTEMPT_MS
   );
   if (!res.ok) throw upstreamFailure(res.status, LABEL[provider]);
   const data = (await res.json()) as ChatCompletionResp;
@@ -153,7 +194,7 @@ export async function runAi(provider: AiProviderId, env: Env, turns: ChatTurn[],
   if (!key) {
     throw new HttpFail(503, 'not_configured', `أضف مفتاح ${LABEL[provider]} الخاص بك من صفحة «مفاتيحي» لتفعيل هذا المساعد.`);
   }
-  if (provider === 'gemini') return { text: await viaGemini(env, key, system, turns), model };
+  if (provider === 'gemini') return viaGemini(env, key, system, turns, research ? { fast: false, maxTokens: 4096, attemptMs: 60_000, totalMs: 90_000 } : { fast: true, maxTokens: 2048, attemptMs: AI_ATTEMPT_MS, totalMs: AI_TOTAL_MS });
   if (provider === 'grok') {
     return { text: await viaChatCompletions('grok', 'https://api.x.ai/v1/chat/completions', key, model, system, turns), model };
   }
@@ -161,4 +202,19 @@ export async function runAi(provider: AiProviderId, env: Env, turns: ChatTurn[],
     return { text: await viaChatCompletions('openai', 'https://api.openai.com/v1/chat/completions', key, model, system, turns), model };
   }
   return { text: await viaChatCompletions('deepseek', 'https://api.deepseek.com/chat/completions', key, model, system, turns), model };
+}
+
+// ترجمة قصيرة لاستعلام بحث عربي إلى كلمات مفتاحية إنجليزية أكاديمية (احتياط حين لا يغطيه القاموس المحلي).
+// مهلة قصيرة (8 ثوانٍ للمحاولة، 15 إجمالاً) ومخرجات محدودة (60 رمزاً) فلا تبطّئ البحث.
+const TRANSLATE_SYSTEM = [
+  'You translate Arabic academic search queries into a concise English keyword query for scholarly databases (ERIC, PubMed, OpenAlex).',
+  'Use standard scholarly terminology (e.g. "learning disabilities", "hearing impairment", "academic achievement").',
+  'Output ONLY the English query on one line: no quotes, no explanation, no Arabic. Keep proper nouns. Maximum 12 words.'
+].join(' ');
+
+export async function geminiTranslate(env: Env, key: string, arabic: string): Promise<{ text: string; model: string }> {
+  const r = await viaGemini(env, key, TRANSLATE_SYSTEM, [{ role: 'user', content: arabic.slice(0, 200) }], { fast: true, maxTokens: 60, attemptMs: 8000, totalMs: 15_000 });
+  const line = r.text.split('\n')[0].replace(/^["'`«»“”\s]+|["'`«»“”\s.]+$/g, '').replace(/^(translation|english)\s*:\s*/i, '').trim();
+  if (!line || line.length > 200 || /[\u0600-\u06FF]/.test(line)) throw new HttpFail(502, 'bad_translation', 'ترجمة غير صالحة');
+  return { text: line, model: r.model };
 }

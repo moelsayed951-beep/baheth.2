@@ -1,90 +1,71 @@
+import { BILINGUAL_TERMS, GENERIC_WORDS } from '@/data/dictionary';
 import { hasArabic } from './text';
 
-// قاموس المصطلحات ثنائي اللغة: يترجم مصطلحات البحث العربية لإنجليزية
-// لأن ERIC وجزءاً كبيراً من OpenAlex يفهمان الإنجليزية أفضل
-const BILINGUAL_TERMS: Record<string, string> = {
-  // مصطلحات تربوية
-  'التربية الخاصة': 'Special Education',
-  'صعوبات التعلم': 'Learning Disabilities',
-  'المناهج وطرق التدريس': 'Curriculum and Instruction',
-  'المناهج': 'Curriculum',
-  'طرق التدريس': 'Teaching Methods',
-  'استراتيجيات التدريس': 'Teaching Strategies',
-  'أصول التربية': 'Foundations of Education',
-  'علم النفس التربوي': 'Educational Psychology',
-  'الصحة النفسية': 'Mental Health',
-  'تكنولوجيا التعليم': 'Educational Technology',
-  'التعليم الإلكتروني': 'E-Learning',
-  'التعلم الإلكتروني': 'E-Learning',
-  'الذكاء الاصطناعي': 'Artificial Intelligence',
-  'الإدارة المدرسية': 'School Administration',
-  'الإدارة التعليمية': 'Educational Administration',
-  'التفكير الابتكاري': 'Creative Thinking',
-  'التفكير الناقد': 'Critical Thinking',
-  'التحصيل الدراسي': 'Academic Achievement',
-  'التحصيل': 'Academic Achievement',
-  'الذكاء الوجداني': 'Emotional Intelligence',
-  'التوحد': 'Autism Spectrum',
-  'الموهوبين': 'Gifted and Talented',
-  'رياض الأطفال': 'Kindergarten',
-  'المعلم': 'Teacher',
-  'الطلاب': 'Students',
-  'فاعلية': 'Effectiveness',
-  'التنمية المستدامة': 'Sustainable Development',
+// ============================================================
+// ترجمة استعلام البحث العربي إلى الإنجليزية بالقاموس المحلي (سريع ومجاني ودقيق للمصطلحات التربوية).
+// المطابقة تتجاهل: التشكيل والتطويل، وتوحّد الهمزات (أإآ→ا) والياء/الألف المقصورة والتاء المربوطة،
+// وتتجاوز «ال» التعريف وحروف الجر الملتصقة (و/ب/ل/ك/ف) فتطابق «وصعوبات التعلّم» و«للصم».
+// ما لا يعرفه القاموس يُترجَم احتياطياً عبر الخادم (Gemini ثم MyMemory) — انظر services/translate.ts
+// ============================================================
 
-  // مصطلحات شرعية
-  'الفقه الإسلامي': 'Islamic Jurisprudence',
-  'الفقه': 'Fiqh Islamic Jurisprudence',
-  'مقاصد الشريعة': 'Maqasid Objectives of Islamic Law',
-  'المصارف الإسلامية': 'Islamic Banking and Finance',
-  'التمويل الإسلامي': 'Islamic Finance',
-  'أصول الفقه': 'Usul al-Fiqh Principles of Islamic Jurisprudence',
-  'القواعد الفقهية': 'Legal Maxims Islamic Law',
-  'الحديث النبوي': 'Prophetic Hadith Studies',
-  'الحديث': 'Hadith',
-  'علوم القرآن': 'Quranic Sciences',
-  'التفسير': 'Quran Exegesis Tafsir',
-  'الفلسفة الإسلامية': 'Islamic Philosophy',
-  'العقيدة': 'Islamic Theology Aqeedah',
-  'الدعوة': 'Dawah Islamic Outreach',
-  'الزكاة': 'Zakat',
-  'الصكوك': 'Sukuk',
-  'السياسة الشرعية': 'Islamic Political Jurisprudence Siyasa Shariyya',
-  'النوازل': 'Contemporary Islamic Legal Issues'
-};
-
-// إزالة "ال" التعريف من الكلمات لتحسين المطابقة (التربية ← تربية)
-function loose(s: string): string {
-  return s.replace(/(^|\s)ال/g, '$1');
+export function normalizeArabic(s: string): string {
+  return s
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '') // التشكيل والتطويل
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}\s+]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// المصطلحات الأطول أولاً لضمان مطابقة العبارات المركبة قبل الكلمات المفردة
-const SORTED_TERMS: [string, string][] = Object.entries(BILINGUAL_TERMS)
-  .map(([ar, en]): [string, string] => [loose(ar), en])
-  .sort((a, b) => b[0].length - a[0].length);
+// حذف «ال» وما يلتصق بها (وال/بال/كال/فال/لل) من بداية كل كلمة
+const stripAl = (s: string): string => s.replace(/(^| )(?:وال|بال|كال|فال|لل|ال)/g, '$1');
+const prep = (s: string): string => stripAl(normalizeArabic(s));
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+interface Entry { key: string; en: string; re: RegExp }
+
+// المصطلحات الأطول أولاً لتُطابَق العبارات المركبة قبل مفرداتها
+const ENTRIES: Entry[] = Object.entries(BILINGUAL_TERMS)
+  .map(([ar, en]) => ({ key: prep(ar), en }))
+  .filter((e, i, all) => e.key && all.findIndex((x) => x.key === e.key) === i)
+  .sort((a, b) => b.key.length - a.key.length)
+  .map((e) => ({ ...e, re: new RegExp(`(^| )[وبلكف]?${escapeRe(e.key)}(?= |$)`) }));
+
+const GENERIC = new Set([...GENERIC_WORDS].map(prep));
 
 export interface ExpandedQuery {
   original: string;
-  english: string; // ترجمة المصطلحات المعروفة (فارغ إن لم يوجد)
+  english: string; // ترجمة ما عرفه القاموس (فارغ إن لم يعرف شيئاً)
   hasArabic: boolean;
+  complete: boolean; // هل غُطّي كل معنى الاستعلام؟ (إن لا: يُستحسن الترجمة الاحتياطية)
+  unmatched: string[]; // كلمات عربية ذات معنى لم يعرفها القاموس
 }
 
 export function expandQuery(rawQuery: string): ExpandedQuery {
   const original = rawQuery.trim();
-  if (!hasArabic(original)) {
-    // الاستعلام إنجليزي أصلاً
-    return { original, english: original, hasArabic: false };
-  }
+  if (!hasArabic(original)) return { original, english: original, hasArabic: false, complete: true, unmatched: [] };
 
-  let remaining = loose(original);
-  const found: string[] = [];
-  for (const [key, en] of SORTED_TERMS) {
-    if (remaining.includes(key)) {
-      found.push(en);
-      remaining = remaining.replace(key, ' ');
-    }
+  let rest = prep(original);
+  const found: { at: number; en: string }[] = [];
+  for (const e of ENTRIES) {
+    const m = e.re.exec(rest);
+    if (!m) continue;
+    const lead = m[1].length;
+    found.push({ at: m.index + lead, en: e.en });
+    // نستبدل المطابَق بمسافات بنفس الطول فتبقى مواضع بقية الكلمات ثابتة (لنرتّب الإنجليزية بترتيب الاستعلام الأصلي)
+    rest = rest.slice(0, m.index + lead) + ' '.repeat(m[0].length - lead) + rest.slice(m.index + m[0].length);
   }
-  return { original, english: [...new Set(found)].join(' '), hasArabic: true };
+  const unmatched: string[] = [];
+  for (const m of rest.matchAll(/\S+/g)) {
+    const w = m[0];
+    if (/^[A-Za-z0-9+]+$/.test(w)) { found.push({ at: m.index ?? 0, en: w }); continue; } // رموز لاتينية داخل الاستعلام (ADHD, STEM...)
+    if (w.length < 3 || GENERIC.has(w)) continue;
+    unmatched.push(w);
+  }
+  const english = [...new Set(found.sort((x, y) => x.at - y.at).map((f) => f.en))].join(' ');
+  return { original, english, hasArabic: true, complete: unmatched.length === 0, unmatched };
 }
 
 // الترجمة الإنجليزية المعتمدة للاستعلام: ما وصل من خدمة الترجمة أولاً، وإلا من القاموس المحلي

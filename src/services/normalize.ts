@@ -33,7 +33,7 @@ export function normalizeData(items: UnifiedResearchResult[], source: AcademicSo
     domain,
     pdfUrl: r.pdfUrl,
     isOpenAccess: Boolean(r.openAccess),
-    citationCount: 0,
+    citationCount: r.citationCount ?? 0,
     sourceUrl: r.url,
     provider: r.provider,
     sourceLabel: r.source
